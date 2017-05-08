@@ -40,7 +40,7 @@ def convert_pixel(pixel, type):
     elif type == 10:
         #L8 = Luminance8
         pixel, = struct.unpack("<B", pixel)
-        return pixel,pixel,pixel,pixel
+        return pixel,pixel,pixel
     else:
         raise Exception("Unknown pixel type {}.".format(type))
 
