@@ -17,7 +17,7 @@ Will save all png files.
 
 
 def convert_pixel(pixel, type):
-    if type == 0:
+    if type == 0 or type == 1:
         # RGB8888
         return struct.unpack('4B', pixel)
     elif type == 2:
@@ -64,7 +64,7 @@ def process_sc(baseName, data, path, UseLZMA):
         width, = struct.unpack('<H', decompressed[i + 6:i + 8])
         height, = struct.unpack('<H', decompressed[i + 8:i + 10])
         i += 10
-        if subType == 0:
+        if subType == 0 or subType == 1:
             pixelSize = 4
         elif subType == 2 or subType ==3 or subType == 4 or subType == 6:
             pixelSize = 2
