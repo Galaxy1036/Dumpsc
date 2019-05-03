@@ -1,19 +1,11 @@
-import argparse
 import os
-import struct
 import lzma
-from math import floor
-from PIL import Image
+import lzham
+import struct
+import argparse
 
-"""
-Tool for extracting Clash Royale "*_tex.sc" files
-Download .apk from the net and extract with 7zip.
-Linux / Mac:
-find ./assets/sc -name *_tex.sc | xargs python dumpsc.py
-Windows:
-for %v in (*tex.sc) do dumpsc.py %v
-Will save all png files.
-"""
+from PIL import Image
+from math import floor
 
 
 def convert_pixel(pixel, type):
@@ -26,10 +18,10 @@ def convert_pixel(pixel, type):
         return (((pixel >> 12) & 0xF) << 4, ((pixel >> 8) & 0xF) << 4,
                 ((pixel >> 4) & 0xF) << 4, ((pixel >> 0) & 0xF) << 4)
     elif type == 3:
-        # RBGA5551 
+        # RBGA5551
         pixel, = struct.unpack('<H', pixel)
         return (((pixel >> 11) & 0x1F) << 3, ((pixel >> 6) & 0x1F) << 3,
-                ((pixel >> 1) & 0x1F) << 3,((pixel) & 0xFF) << 7)
+                ((pixel >> 1) & 0x1F) << 3, ((pixel) & 0xFF) << 7)
     elif type == 4:
         # RGB565
         pixel, = struct.unpack("<H", pixel)
@@ -37,22 +29,49 @@ def convert_pixel(pixel, type):
     elif type == 6:
         #LA88 = Luminance Alpha 88
         pixel, = struct.unpack("<H", pixel)
-        return (pixel >> 8), (pixel >> 8),(pixel >> 8), (pixel & 0xFF )
+        return (pixel >> 8), (pixel >> 8), (pixel >> 8), (pixel & 0xFF)
     elif type == 10:
         #L8 = Luminance8
         pixel, = struct.unpack("<B", pixel)
-        return pixel,pixel,pixel
+        return pixel, pixel, pixel
     else:
         raise Exception("Unknown pixel type {}.".format(type))
 
 
-def process_sc(baseName, data, path, UseLZMA):
-    # Fix header and decompress
-    if UseLZMA:
-        data = data[26:]
-        data = data[0:9] + (b'\x00' * 4) + data[9:]
-        decompressed = lzma.LZMADecompressor().decompress(data)
-    else: 
+def process_sc(baseName, data, path, decompress):
+    if decompress:
+        if data[:2] == b'SC':
+            # Skip the header if there's any
+            hash_length = int.from_bytes(data[6: 10], 'big')
+            data = data[10 + hash_length:]
+
+        if data[:4] == b'SCLZ':
+            print('[*] Detected LZHAM compression !')
+
+            dict_size = int.from_bytes(data[4:5], 'big')
+            uncompressed_size = int.from_bytes(data[5:9], 'little')
+
+            try:
+                decompressed = lzham.decompress(data[9:], uncompressed_size, {'dict_size_log2': dict_size})
+
+            except Exception as exception:
+                print('Cannot decompress {} !'.format(baseName))
+                return
+
+        else:
+            print('[*] Detected LZMA compression !')
+            data = data[0:9] + (b'\x00' * 4) + data[9:]
+
+            try:
+                decompressed = lzma.LZMADecompressor().decompress(data)
+
+            except Exception as exception:
+                print('Cannot decompress {} !'.format(baseName))
+                return
+
+        print('[*] Successfully decompressed {} !'.format(baseName))
+
+    else:
         decompressed = data
 
     i = 0
@@ -66,7 +85,7 @@ def process_sc(baseName, data, path, UseLZMA):
         i += 10
         if subType == 0 or subType == 1:
             pixelSize = 4
-        elif subType == 2 or subType ==3 or subType == 4 or subType == 6:
+        elif subType == 2 or subType == 3 or subType == 4 or subType == 6:
             pixelSize = 2
         elif subType == 10:
             pixelSize = 1
@@ -113,25 +132,28 @@ def process_sc(baseName, data, path, UseLZMA):
         img.save(path + baseName + ('_' * picCount) + '.png', 'PNG')
         picCount += 1
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Extract png files from Clash Royale "*_tex.sc" files')
+    parser = argparse.ArgumentParser(description='Extract png files from Supercell "*_tex.sc" files')
     parser.add_argument('files', help='sc file', nargs='+')
     parser.add_argument('-o', help='Extract pngs to directory', type=str)
-    parser.add_argument('-lzma', help='Include lzma decompression', action='store_true')
+    parser.add_argument('-d', '--decompress', help='Try to decompress _tex.sc before processing it', action='store_true')
 
     args = parser.parse_args()
 
     if args.o:
         path = os.path.normpath(args.o) + '/'
+
     else:
         path = os.path.dirname(os.path.realpath(__file__)) + '/'
 
     for file in args.files:
-        if file.endswith(('_tex','_tex.sc')):
-            baseName, ext = os.path.splitext(os.path.basename(file))
+        if file.endswith('tex.sc'):
+            basename, _ = os.path.splitext(os.path.basename(file))
+
             with open(file, 'rb') as f:
-                print('{}'.format(f.name))
-                data = f.read()
-                process_sc(baseName, data, path ,args.lzma)
+                print('[*] Processing {}'.format(f.name))
+                process_sc(basename, f.read(), path, args.decompress)
+
         else:
-            print('{} not supported.'.format(file))
+            print('[*] Only tex.sc are supported !'.format(file))
