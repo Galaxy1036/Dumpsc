@@ -86,6 +86,9 @@ def process_sc(baseName, data, path, decompress):
         else:
             decompressed = data
 
+    else:
+        decompressed = data
+
     i = 0
     picCount = 0
     while len(decompressed[i:]) > 5:
