@@ -11,7 +11,7 @@ If your file is compressed run the following command:
 
 else simply use:
 
-> python dumpsc.py <your_tex_sc_file
+> python dumpsc.py <your_tex_sc_file>
 
 
 
