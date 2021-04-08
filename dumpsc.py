@@ -40,13 +40,15 @@ def convert_pixel(pixel, type):
 
 def process_sc(baseName, data, path, decompress):
     if decompress:
+        version = None
+
         if data[:2] == b'SC':
             # Skip the header if there's any
             version = int.from_bytes(data[2: 6], 'big')
             hash_length = int.from_bytes(data[6: 10], 'big')
             data = data[10 + hash_length:]
 
-        if version in (1, 3):  # Version 2 in HDP does not use any compression
+        if version in (None, 1, 3):  # Version 2 in HDP does not use any compression
             if data[:4] == b'SCLZ':
                 print('[*] Detected LZHAM compression !')
 
