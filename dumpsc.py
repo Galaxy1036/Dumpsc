@@ -44,46 +44,48 @@ def process_sc(baseName, data, path, decompress):
 
         if data[:2] == b'SC':
             # Skip the header if there's any
-            version = int.from_bytes(data[2: 6], 'big')
-            hash_length = int.from_bytes(data[6: 10], 'big')
-            data = data[10 + hash_length:]
+            pre_version = int.from_bytes(data[2: 6], 'big')
 
-        if version in (None, 1, 3):  # Version 2 in HDP does not use any compression
-            if data[:4] == b'SCLZ':
-                print('[*] Detected LZHAM compression !')
+            if pre_version == 4:
+                version = int.from_bytes(data[6: 10], 'big')
+                hash_length = int.from_bytes(data[10: 14], 'big')
+                end_block_size = int.from_bytes(data[-4:], 'big')
 
-                dict_size = int.from_bytes(data[4:5], 'big')
-                uncompressed_size = int.from_bytes(data[5:9], 'little')
-
-                try:
-                    decompressed = lzham.decompress(data[9:], uncompressed_size, {'dict_size_log2': dict_size})
-
-                except Exception as exception:
-                    print('Cannot decompress {} !'.format(baseName))
-                    return
-
-            elif data[:4] == bytes.fromhex('28 B5 2F FD'):
-                print('[*] Detected Zstandard compression !')
-
-                try:
-                    decompressed = zstandard.decompress(data)
-
-                except Exception as exception:
-                    print('Cannot decompress {} !'.format(baseName))
-                    return
+                data = data[14 + hash_length:-end_block_size - 9]
 
             else:
-                print('[*] Detected LZMA compression !')
-                data = data[0:9] + (b'\x00' * 4) + data[9:]
+                version = pre_version
+                hash_length = int.from_bytes(data[6: 10], 'big')
+                data = data[10 + hash_length:]
 
-                try:
-                    decompressed = lzma.LZMADecompressor().decompress(data)
+        if version in (None, 1, 3):
+            try:
+                if data[:4] == b'SCLZ':
+                    print('[*] Detected LZHAM compression !')
 
-                except Exception as exception:
-                    print('Cannot decompress {} !'.format(baseName))
-                    return
+                    dict_size = int.from_bytes(data[4:5], 'big')
+                    uncompressed_size = int.from_bytes(data[5:9], 'little')
+                    decompressed = lzham.decompress(data[9:], uncompressed_size, {'dict_size_log2': dict_size})
 
-            print('[*] Successfully decompressed {} !'.format(baseName))
+                elif data[:4] == bytes.fromhex('28 B5 2F FD'):
+                    print('[*] Detected Zstandard compression !')
+                    decompressed = zstandard.decompress(data)
+
+                else:
+                    print('[*] Detected LZMA compression !')
+                    data = data[0:9] + (b'\x00' * 4) + data[9:]
+                    decompressor = lzma.LZMADecompressor()
+
+                    output = []
+
+                    while decompressor.needs_input:
+                        output.append(decompressor.decompress(data))
+
+                    decompressed = b''.join(output)
+
+            except Exception as _:
+                print('Cannot decompress {} !'.format(baseName))
+                return
 
         else:
             decompressed = data
