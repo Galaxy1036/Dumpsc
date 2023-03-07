@@ -1,3 +1,5 @@
 Pillow
 pylzham
 zstandard
+liblzfse
+astc_decomp

@@ -6,6 +6,7 @@ import argparse
 import zstandard
 
 from PIL import Image
+from ktx import load_ktx
 
 
 def convert_pixel(pixel, type):
@@ -34,6 +35,8 @@ def convert_pixel(pixel, type):
         # L8 = Luminance8
         pixel, = struct.unpack("<B", pixel)
         return pixel, pixel, pixel
+    elif type == 15:
+        raise NotImplementedError("Pixel type 15 is not supported")
     else:
         raise Exception("Unknown pixel type {}.".format(type))
 
@@ -109,21 +112,27 @@ def process_sc(baseName, data, path, decompress):
             pixelSize = 2
         elif subType == 10:
             pixelSize = 1
-        else:
+        elif subType != 15:
             raise Exception("Unknown pixel type {}.".format(subType))
 
         print('fileType: {}, fileSize: {}, subType: {}, width: {}, '
               'height: {}'.format(fileType, fileSize, subType, width, height))
 
-        img = Image.new("RGBA", (width, height))
-        pixels = []
+        if subType == 15:
+            ktx_size, = struct.unpack('<I', decompressed[i:i + 4])
+            img = load_ktx(decompressed[i + 4: i + 4 + ktx_size])
+            i += 4 + ktx_size
 
-        for y in range(height):
-            for x in range(width):
-                pixels.append(convert_pixel(decompressed[i:i + pixelSize], subType))
-                i += pixelSize
+        else:
+            img = Image.new("RGBA", (width, height))
+            pixels = []
 
-        img.putdata(pixels)
+            for y in range(height):
+                for x in range(width):
+                    pixels.append(convert_pixel(decompressed[i:i + pixelSize], subType))
+                    i += pixelSize
+
+            img.putdata(pixels)
 
         if fileType == 29 or fileType == 28 or fileType == 27:
             imgl = img.load()
