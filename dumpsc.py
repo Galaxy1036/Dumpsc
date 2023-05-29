@@ -100,67 +100,76 @@ def process_sc(baseName, data, path, decompress):
     picCount = 0
     while len(decompressed[i:]) > 5:
         fileType, = struct.unpack('<b', bytes([decompressed[i]]))
+
+        if fileType == 0x2D:
+            i += 4  # Ignore this uint32, it's basically the fileSize + the size of subType + width + height (9 bytes)
+
         fileSize, = struct.unpack('<I', decompressed[i + 1:i + 5])
         subType, = struct.unpack('<b', bytes([decompressed[i + 5]]))
         width, = struct.unpack('<H', decompressed[i + 6:i + 8])
         height, = struct.unpack('<H', decompressed[i + 8:i + 10])
         i += 10
 
-        if subType in (0, 1):
-            pixelSize = 4
-        elif subType in (2, 3, 4, 6):
-            pixelSize = 2
-        elif subType == 10:
-            pixelSize = 1
-        elif subType != 15:
-            raise Exception("Unknown pixel type {}.".format(subType))
-
         print('fileType: {}, fileSize: {}, subType: {}, width: {}, '
               'height: {}'.format(fileType, fileSize, subType, width, height))
 
-        if subType == 15:
-            ktx_size, = struct.unpack('<I', decompressed[i:i + 4])
-            img = load_ktx(decompressed[i + 4: i + 4 + ktx_size])
-            i += 4 + ktx_size
+        if fileType != 0x2D:
+            if subType in (0, 1):
+                pixelSize = 4
+            elif subType in (2, 3, 4, 6):
+                pixelSize = 2
+            elif subType == 10:
+                pixelSize = 1
+            elif subType != 15:
+                raise Exception("Unknown pixel type {}.".format(subType))
 
-        else:
-            img = Image.new("RGBA", (width, height))
-            pixels = []
+            if subType == 15:
+                ktx_size, = struct.unpack('<I', decompressed[i:i + 4])
+                img = load_ktx(decompressed[i + 4: i + 4 + ktx_size])
+                i += 4 + ktx_size
 
-            for y in range(height):
-                for x in range(width):
-                    pixels.append(convert_pixel(decompressed[i:i + pixelSize], subType))
-                    i += pixelSize
+            else:
+                img = Image.new("RGBA", (width, height))
+                pixels = []
 
-            img.putdata(pixels)
+                for y in range(height):
+                    for x in range(width):
+                        pixels.append(convert_pixel(decompressed[i:i + pixelSize], subType))
+                        i += pixelSize
 
-        if fileType == 29 or fileType == 28 or fileType == 27:
-            imgl = img.load()
-            iSrcPix = 0
+                img.putdata(pixels)
 
-            for l in range(height // 32):  # block of 32 lines
-                # normal 32-pixels blocks
+            if fileType == 29 or fileType == 28 or fileType == 27:
+                imgl = img.load()
+                iSrcPix = 0
+
+                for l in range(height // 32):  # block of 32 lines
+                    # normal 32-pixels blocks
+                    for k in range(width // 32):  # 32-pixels blocks in a line
+                        for j in range(32):  # line in a multi line block
+                            for h in range(32):  # pixels in a block
+                                imgl[h + (k * 32), j + (l * 32)] = pixels[iSrcPix]
+                                iSrcPix += 1
+                    # line end blocks
+                    for j in range(32):
+                        for h in range(width % 32):
+                            imgl[h + (width - (width % 32)), j + (l * 32)] = pixels[iSrcPix]
+                            iSrcPix += 1
+                # final lines
                 for k in range(width // 32):  # 32-pixels blocks in a line
-                    for j in range(32):  # line in a multi line block
-                        for h in range(32):  # pixels in a block
-                            imgl[h + (k * 32), j + (l * 32)] = pixels[iSrcPix]
+                    for j in range(height % 32):  # line in a multi line block
+                        for h in range(32):  # pixels in a 32-pixels-block
+                            imgl[h + (k * 32), j + (height - (height % 32))] = pixels[iSrcPix]
                             iSrcPix += 1
                 # line end blocks
-                for j in range(32):
+                for j in range(height % 32):
                     for h in range(width % 32):
-                        imgl[h + (width - (width % 32)), j + (l * 32)] = pixels[iSrcPix]
+                        imgl[h + (width - (width % 32)), j + (height - (height % 32))] = pixels[iSrcPix]
                         iSrcPix += 1
-            # final lines
-            for k in range(width // 32):  # 32-pixels blocks in a line
-                for j in range(height % 32):  # line in a multi line block
-                    for h in range(32):  # pixels in a 32-pixels-block
-                        imgl[h + (k * 32), j + (height - (height % 32))] = pixels[iSrcPix]
-                        iSrcPix += 1
-            # line end blocks
-            for j in range(height % 32):
-                for h in range(width % 32):
-                    imgl[h + (width - (width % 32)), j + (height - (height % 32))] = pixels[iSrcPix]
-                    iSrcPix += 1
+
+        else:
+            img = load_ktx(decompressed[i:i + fileSize])
+            i += fileSize
 
         img.save(path + baseName + ('_' * picCount) + '.png', 'PNG')
         picCount += 1

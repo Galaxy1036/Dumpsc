@@ -22,8 +22,17 @@ def load_ktx(data):
     pixelWidth, pixelHeight = struct.unpack(endianness + '2I', header[36:44])
     bytesOfKeyValueData, = struct.unpack(endianness + 'I', header[60:64])
 
-    if glInternalFormat != 0x93B0:
-        raise TypeError('Unsupported texture format: 0x{}'.format(hex(glInternalFormat)))
+    if glInternalFormat not in (0x93B0, 0x93B4, 0x93B7):
+        raise TypeError('Unsupported texture format: {}'.format(hex(glInternalFormat)))
+
+    if glInternalFormat == 0x93B0:
+        block_width, block_height = 4, 4
+
+    elif glInternalFormat == 0x93B4:
+        block_width, block_height = 6, 6
+
+    else:
+        block_width, block_height = 8, 8
 
     key_value_data = ktx_data[:bytesOfKeyValueData]
     ktx_data = ktx_data[bytesOfKeyValueData:]
@@ -40,4 +49,4 @@ def load_ktx(data):
     else:
         image_data = ktx_data[4:]
 
-    return Image.frombytes('RGBA', (pixelWidth, pixelHeight), image_data, 'astc', (4, 4, False))
+    return Image.frombytes('RGBA', (pixelWidth, pixelHeight), image_data, 'astc', (block_width, block_height, False))
