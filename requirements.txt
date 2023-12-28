@@ -1,5 +1,5 @@
 Pillow
 pylzham
 zstandard
-liblzfse
-astc_decomp
+pyliblzfse
+texture2ddecoder

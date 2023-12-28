@@ -1,8 +1,8 @@
 import struct
-import astc_decomp
 import liblzfse
 
 from PIL import Image
+from texture2ddecoder import decode_astc
 
 
 def load_ktx(data):
@@ -49,4 +49,5 @@ def load_ktx(data):
     else:
         image_data = ktx_data[4:]
 
-    return Image.frombytes('RGBA', (pixelWidth, pixelHeight), image_data, 'astc', (block_width, block_height, False))
+    decoded_data = decode_astc(image_data, pixelWidth, pixelHeight, block_width, block_height)
+    return Image.frombytes('RGBA', (pixelWidth, pixelHeight), decoded_data, 'raw', ('BGRA'))
