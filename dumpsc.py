@@ -41,7 +41,7 @@ def convert_pixel(pixel, type):
         raise Exception("Unknown pixel type {}.".format(type))
 
 
-def process_sc(baseName, data, path, decompress):
+def process_sc(texturePath, baseName, data, path, decompress):
     if decompress:
         version = None
 
@@ -105,15 +105,21 @@ def process_sc(baseName, data, path, decompress):
             i += 4  # Ignore this uint32, it's basically the fileSize + the size of subType + width + height (9 bytes)
 
         fileSize, = struct.unpack('<I', decompressed[i + 1:i + 5])
-        subType, = struct.unpack('<b', bytes([decompressed[i + 5]]))
-        width, = struct.unpack('<H', decompressed[i + 6:i + 8])
-        height, = struct.unpack('<H', decompressed[i + 8:i + 10])
-        i += 10
+        i += 5
+
+        if fileType == 0x2F:
+            zktx_path = decompressed[i + 1: i + 1 + decompressed[i]].decode('utf-8')
+            i += decompressed[i] + 1
+
+        subType, = struct.unpack('<b', bytes([decompressed[i]]))
+        width, = struct.unpack('<H', decompressed[i + 1:i + 3])
+        height, = struct.unpack('<H', decompressed[i + 3:i + 5])
+        i += 5
 
         print('fileType: {}, fileSize: {}, subType: {}, width: {}, '
               'height: {}'.format(fileType, fileSize, subType, width, height))
 
-        if fileType != 0x2D:
+        if fileType != 0x2D and fileType != 0x2F:
             if subType in (0, 1):
                 pixelSize = 4
             elif subType in (2, 3, 4, 6):
@@ -167,6 +173,16 @@ def process_sc(baseName, data, path, decompress):
                         imgl[h + (width - (width % 32)), j + (height - (height % 32))] = pixels[iSrcPix]
                         iSrcPix += 1
 
+        elif fileType == 0x2F:
+            zktx_path = os.path.join(texturePath, zktx_path)
+
+            if os.path.isfile(zktx_path):
+                with open(zktx_path, 'rb') as f:
+                    img = load_ktx(zstandard.decompress(f.read()))
+
+            else:
+                raise Exception('External KTX texture {} cannot be found !'.format(zktx_path))
+
         else:
             img = load_ktx(decompressed[i:i + fileSize])
             i += fileSize
@@ -192,10 +208,11 @@ if __name__ == "__main__":
     for file in args.files:
         if file.endswith('tex.sc'):
             basename, _ = os.path.splitext(os.path.basename(file))
+            texturePath = os.path.dirname(file)
 
             with open(file, 'rb') as f:
                 print('[*] Processing {}'.format(f.name))
-                process_sc(basename, f.read(), path, args.decompress)
+                process_sc(texturePath, basename, f.read(), path, args.decompress)
 
         else:
             print('[*] Only tex.sc are supported !')
