@@ -6,6 +6,8 @@ import argparse
 import zstandard
 
 from PIL import Image
+from texture2ddecoder import decode_astc
+
 from ktx import load_ktx
 
 
@@ -41,6 +43,45 @@ def convert_pixel(pixel, type):
         raise Exception("Unknown pixel type {}.".format(type))
 
 
+def read_sctx_texture(sctx_data):
+    i=0
+    streaming_texture_length, = struct.unpack('<I', sctx_data[i:i+4])
+
+    # Read streaming texture data
+    streaming_texture_header_length, = struct.unpack('<I', sctx_data[i+4:i+8])
+    i += streaming_texture_header_length + 8
+
+    pixel_type, = struct.unpack('<I', sctx_data[i:i+4])
+    i = streaming_texture_length + 32
+
+    # Read texture data
+    texture_width, = struct.unpack('<H', sctx_data[i:i+2])
+    texture_height, = struct.unpack('<H', sctx_data[i+2:i+4])
+
+    hash_length, = struct.unpack('<I', sctx_data[i+8:i+12])
+    i += hash_length + 12
+
+    texture_data = sctx_data[i:]
+
+    if texture_data.startswith(bytes.fromhex('28 B5 2F FD')):
+        texture_data = zstandard.decompress(texture_data)
+
+        if pixel_type == 0x46:
+            img = Image.frombytes('RGBA', (texture_width, texture_height), texture_data, 'raw', ('RGBA'))
+
+        elif pixel_type == 0xD4:
+            astc_decompressed_data =  decode_astc(texture_data, texture_width, texture_height, 8, 8)
+            img = Image.frombytes('RGBA', (texture_width, texture_height), astc_decompressed_data, 'raw', ('BGRA'))
+
+        else:
+            raise ValueError("Invalid pixel format {} in external texture".format(pixel_type))
+
+    else:
+        raise ValueError("Encountered non zstandard compressed sctx texture !")
+
+    return img
+
+
 def process_sc(texturePath, baseName, data, path, decompress):
     if decompress:
         version = None
@@ -54,7 +95,13 @@ def process_sc(texturePath, baseName, data, path, decompress):
                 hash_length = int.from_bytes(data[10: 14], 'big')
                 end_block_size = int.from_bytes(data[-4:], 'big')
 
-                data = data[14 + hash_length:-end_block_size - 9]
+                if version == 3:
+                    # skip the end block size and the 'START' tag
+                    data = data[14 + hash_length:-end_block_size - 9]
+
+                else:
+                    # version != 3 does not have a 'START' tag
+                    data = data[14 + hash_length:-end_block_size - 4]
 
             else:
                 version = pre_version
@@ -108,7 +155,7 @@ def process_sc(texturePath, baseName, data, path, decompress):
         i += 5
 
         if fileType == 0x2F:
-            zktx_path = decompressed[i + 1: i + 1 + decompressed[i]].decode('utf-8')
+            external_texture_path = decompressed[i + 1: i + 1 + decompressed[i]].decode('utf-8')
             i += decompressed[i] + 1
 
         subType, = struct.unpack('<b', bytes([decompressed[i]]))
@@ -174,14 +221,23 @@ def process_sc(texturePath, baseName, data, path, decompress):
                         iSrcPix += 1
 
         elif fileType == 0x2F:
-            zktx_path = os.path.join(texturePath, zktx_path)
+            external_texture_path = os.path.join(texturePath, external_texture_path)
 
-            if os.path.isfile(zktx_path):
-                with open(zktx_path, 'rb') as f:
-                    img = load_ktx(zstandard.decompress(f.read()))
+            if os.path.isfile(external_texture_path):
+                with open(external_texture_path, 'rb') as f:
+                    external_texture_data = f.read()
+
+                if external_texture_path.endswith('.zktx'):
+                    img = load_ktx(zstandard.decompress(external_texture_data))
+
+                elif external_texture_path.endswith('.sctx'):
+                    img = read_sctx_texture(external_texture_data)
+
+                else:
+                    raise Exception('External texture {} has an unknown format !'.format(external_texture_path))
 
             else:
-                raise Exception('External KTX texture {} cannot be found !'.format(zktx_path))
+                raise Exception('External texture {} cannot be found !'.format(external_texture_path))
 
         else:
             img = load_ktx(decompressed[i:i + fileSize])
